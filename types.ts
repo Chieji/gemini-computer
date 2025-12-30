@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -18,4 +19,9 @@ export interface InteractionData {
   elementType: string;
   elementText: string;
   appContext: string | null;
+}
+
+export interface UserProfile {
+  username: string;
+  avatar: string;
 }

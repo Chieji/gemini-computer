@@ -75,10 +75,12 @@ export const GeneratedContent: React.FC<GeneratedContentProps> = ({
     // Process scripts only when loading is complete and content has changed
     if (!isLoading) {
       if (htmlContent !== processedHtmlContentRef.current) {
-        const scripts = Array.from(container.getElementsByTagName('script'));
+        // Fix: Explicitly cast to HTMLScriptElement array to ensure correct typing during iteration and property access
+        const scripts = Array.from(container.getElementsByTagName('script')) as HTMLScriptElement[];
         scripts.forEach((oldScript) => {
           try {
             const newScript = document.createElement('script');
+            // Fix: oldScript is now correctly recognized as HTMLScriptElement
             Array.from(oldScript.attributes).forEach((attr) =>
               newScript.setAttribute(attr.name, attr.value),
             );

@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -10,7 +11,7 @@ interface GeneratedContentProps {
   htmlContent: string;
   onInteract: (data: InteractionData) => void;
   appContext: string | null;
-  isLoading: boolean; // Added isLoading prop
+  isLoading: boolean;
 }
 
 export const GeneratedContent: React.FC<GeneratedContentProps> = ({
@@ -20,11 +21,41 @@ export const GeneratedContent: React.FC<GeneratedContentProps> = ({
   isLoading,
 }) => {
   const contentRef = useRef<HTMLDivElement>(null);
-  const processedHtmlContentRef = useRef<string | null>(null); // Ref to track processed content
+  const processedHtmlContentRef = useRef<string | null>(null);
 
   useEffect(() => {
     const container = contentRef.current;
     if (!container) return;
+
+    const triggerInteraction = (targetElement: HTMLElement) => {
+      let interactionValue: string | undefined =
+        targetElement.dataset.interactionValue;
+
+      if (targetElement.dataset.valueFrom) {
+        const inputElement = document.getElementById(
+          targetElement.dataset.valueFrom,
+        ) as HTMLInputElement | HTMLTextAreaElement;
+        if (inputElement) {
+          interactionValue = inputElement.value;
+        }
+      }
+
+      const interactionData: InteractionData = {
+        id: targetElement.dataset.interactionId || 'unknown',
+        type: targetElement.dataset.interactionType || 'generic_click',
+        value: interactionValue,
+        elementType: targetElement.tagName.toLowerCase(),
+        elementText: (
+          targetElement.innerText ||
+          (targetElement as HTMLInputElement).value ||
+          ''
+        )
+          .trim()
+          .substring(0, 75),
+        appContext: appContext,
+      };
+      onInteract(interactionData);
+    };
 
     const handleClick = (event: MouseEvent) => {
       let targetElement = event.target as HTMLElement;
@@ -39,43 +70,62 @@ export const GeneratedContent: React.FC<GeneratedContentProps> = ({
 
       if (targetElement && targetElement.dataset.interactionId) {
         event.preventDefault();
+        triggerInteraction(targetElement);
+      }
+    };
 
-        let interactionValue: string | undefined =
-          targetElement.dataset.interactionValue;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Enter') {
+        const target = event.target as HTMLElement;
+        const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA';
+        
+        if (isInput) {
+          const inputId = target.id;
+          
+          // Case A: Input has an ID and might have a linked submit button
+          if (inputId) {
+            const submitButton = container.querySelector(
+              `[data-value-from="${inputId}"]`,
+            ) as HTMLElement;
+            
+            if (submitButton) {
+              event.preventDefault();
+              triggerInteraction(submitButton);
+              return;
+            }
+          }
 
-        if (targetElement.dataset.valueFrom) {
-          const inputElement = document.getElementById(
-            targetElement.dataset.valueFrom,
-          ) as HTMLInputElement | HTMLTextAreaElement;
-          if (inputElement) {
-            interactionValue = inputElement.value;
+          // Case B: It is a terminal input (checking class specifically)
+          // This must be independent of inputId check because terminals often use raw inputs
+          if (target.classList.contains('terminal-input')) {
+            event.preventDefault();
+            const interactionData: InteractionData = {
+              id: 'terminal_execute',
+              type: 'command_run',
+              value: (target as HTMLInputElement).value,
+              elementType: 'input',
+              elementText: 'Run Command',
+              appContext: appContext,
+            };
+            onInteract(interactionData);
           }
         }
-
-        const interactionData: InteractionData = {
-          id: targetElement.dataset.interactionId,
-          type: targetElement.dataset.interactionType || 'generic_click',
-          value: interactionValue,
-          elementType: targetElement.tagName.toLowerCase(),
-          elementText: (
-            targetElement.innerText ||
-            (targetElement as HTMLInputElement).value ||
-            ''
-          )
-            .trim()
-            .substring(0, 75),
-          appContext: appContext,
-        };
-        onInteract(interactionData);
       }
     };
 
     container.addEventListener('click', handleClick);
+    container.addEventListener('keydown', handleKeyDown);
 
-    // Process scripts only when loading is complete and content has changed
+    const scrollToBottom = () => {
+      const terminal = container.querySelector('.llm-terminal');
+      if (terminal) {
+        terminal.scrollTop = terminal.scrollHeight;
+      }
+    };
+
     if (!isLoading) {
       if (htmlContent !== processedHtmlContentRef.current) {
-        const scripts = Array.from(container.getElementsByTagName('script'));
+        const scripts = Array.from(container.getElementsByTagName('script')) as HTMLScriptElement[];
         scripts.forEach((oldScript) => {
           try {
             const newScript = document.createElement('script');
@@ -86,41 +136,35 @@ export const GeneratedContent: React.FC<GeneratedContentProps> = ({
 
             if (oldScript.parentNode) {
               oldScript.parentNode.replaceChild(newScript, oldScript);
-            } else {
-              console.warn(
-                'Script tag found without a parent node:',
-                oldScript,
-              );
             }
           } catch (e) {
-            console.error(
-              'Error processing/executing script tag. This usually indicates a syntax error in the LLM-generated script.',
-              {
-                scriptContent:
-                  oldScript.innerHTML.substring(0, 500) +
-                  (oldScript.innerHTML.length > 500 ? '...' : ''),
-                error: e,
-              },
-            );
+            console.error('Error executing script tag:', e);
           }
         });
-        processedHtmlContentRef.current = htmlContent; // Mark this content as processed
+        processedHtmlContentRef.current = htmlContent;
+        scrollToBottom();
+        
+        // Focus terminal input if present
+        const termInput = container.querySelector('.terminal-input') as HTMLInputElement;
+        if (termInput) {
+          termInput.focus();
+        }
       }
     } else {
-      // If loading, reset the processed content ref. This ensures that when loading finishes,
-      // the new content (even if identical to a previous state before loading) is processed.
       processedHtmlContentRef.current = null;
+      scrollToBottom();
     }
 
     return () => {
       container.removeEventListener('click', handleClick);
+      container.removeEventListener('keydown', handleKeyDown);
     };
   }, [htmlContent, onInteract, appContext, isLoading]);
 
   return (
     <div
       ref={contentRef}
-      className="w-full h-full overflow-y-auto"
+      className={`w-full h-full overflow-y-auto transition-opacity duration-300 ${isLoading && !htmlContent ? 'opacity-0' : 'opacity-100'}`}
       dangerouslySetInnerHTML={{__html: htmlContent}}
     />
   );
